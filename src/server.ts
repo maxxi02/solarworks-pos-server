@@ -4,7 +4,6 @@ import cors from "cors";
 import { connectDatabase } from "./config/database";
 import authRoutes from "./routes/auth.routes";
 
-
 dotenv.config();
 
 // Create Express app
@@ -33,6 +32,14 @@ app.get("/health", (req: Request, res: Response) => {
     success: true,
     message: "Server is running",
     timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
+    message: "POS Server API is running",
+    version: "1.0.0",
   });
 });
 
