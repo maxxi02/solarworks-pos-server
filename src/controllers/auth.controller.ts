@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { User } from "../models/User";
 import dotenv from "dotenv";
 import { socketService } from "../server";
+
 dotenv.config();
 
 // Helper function to generate tokens

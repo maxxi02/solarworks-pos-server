@@ -7,6 +7,7 @@ exports.getProfile = exports.logout = exports.refreshToken = exports.login = exp
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = require("../models/User");
 const dotenv_1 = __importDefault(require("dotenv"));
+const server_1 = require("../server");
 dotenv_1.default.config();
 // Helper function to generate tokens
 const generateTokens = (userId) => {
@@ -106,6 +107,11 @@ const login = async (req, res) => {
         // Save refresh token
         user.refreshToken = refreshToken;
         await user.save();
+        server_1.socketService.emitToAll("user-logged-in", {
+            userId: user._id,
+            name: user.name,
+            timestamp: new Date(),
+        });
         res.status(200).json({
             success: true,
             message: "Login successful",
