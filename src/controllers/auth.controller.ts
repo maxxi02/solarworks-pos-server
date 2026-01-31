@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { User } from "../models/User";
 import dotenv from "dotenv";
+import { socketService } from "../server";
 dotenv.config();
 
 // Helper function to generate tokens
@@ -123,6 +124,12 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     // Save refresh token
     user.refreshToken = refreshToken;
     await user.save();
+
+    socketService.emitToAll("user-logged-in", {
+      userId: user._id,
+      name: user.name,
+      timestamp: new Date(),
+    });
 
     res.status(200).json({
       success: true,

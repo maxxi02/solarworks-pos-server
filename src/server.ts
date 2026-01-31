@@ -3,12 +3,28 @@ import dotenv from "dotenv";
 import cors from "cors";
 import { connectDatabase } from "./config/database";
 import authRoutes from "./routes/auth.routes";
-
+import { Server } from "socket.io";
+import http from "http";
+import { SocketService } from "./services/socket.services";
 dotenv.config();
 
 // Create Express app
 const app: Application = express();
 const PORT = process.env.PORT || 7070;
+
+//create http server
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin:
+      process.env.NODE_ENV === "production"
+        ? process.env.LIVE_CLIENT_URL
+        : process.env.CLIENT_URL,
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+});
 
 // Middleware
 app.use(
@@ -20,6 +36,7 @@ app.use(
     credentials: true,
   }),
 );
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -51,6 +68,17 @@ app.use((req: Request, res: Response) => {
   });
 });
 
+io.on("connection", (socket) => {
+  console.log(`User connected: ${socket.id}`);
+  socket.on("message", (data) => {
+    console.log(`Message received:`, data);
+    socket.emit("message", { text: "message received" });
+    socket.on("disconnect", () => {
+      console.log(`❌ User disconnected: ${socket.id}`);
+    });
+  });
+});
+
 // Start server
 const startServer = async () => {
   try {
@@ -69,4 +97,7 @@ const startServer = async () => {
   }
 };
 
+const socketService = new SocketService(io);
 startServer();
+
+export { socketService };
