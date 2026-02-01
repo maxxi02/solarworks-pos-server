@@ -2,10 +2,13 @@ import express, { Application, Request, Response } from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import { connectDatabase } from "./config/database";
-import authRoutes from "./routes/auth.routes";
 import { Server } from "socket.io";
 import http from "http";
 import { SocketService } from "./services/socket.services";
+
+import authRoutes from "./routes/auth.routes";
+import staffRoutes from "./routes/staff.routes";
+
 dotenv.config();
 
 // Create Express app
@@ -42,6 +45,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/staff", staffRoutes);
 
 // Health check route
 app.get("/health", (req: Request, res: Response) => {

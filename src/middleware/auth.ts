@@ -2,41 +2,31 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { User } from "../models/User";
 
-// Extend Express Request type to include user
-declare global {
-  namespace Express {
-    interface Request {
-      user?: any;
-    }
-  }
-}
-
-export const authenticate = async (
+export const protect = async (
   req: Request,
   res: Response,
   next: NextFunction,
 ): Promise<void> => {
   try {
-    // Get token from Authorization header
-    const authHeader = req.headers.authorization;
+    let token;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (req.headers.authorization?.startsWith("Bearer")) {
+      token = req.headers.authorization.split(" ")[1];
+    }
+
+    if (!token) {
       res.status(401).json({
         success: false,
-        message: "No token provided",
+        message: "Not authorized to access this route",
       });
       return;
     }
 
-    const token = authHeader.split(" ")[1];
-
-    // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as {
       userId: string;
     };
 
-    // Find user
-    const user = await User.findById(decoded.userId).select("-password");
+    const user = await User.findById(decoded.userId).select("+role");
 
     if (!user) {
       res.status(401).json({
@@ -46,13 +36,33 @@ export const authenticate = async (
       return;
     }
 
-    // Attach user to request
+    if (!user.isActive) {
+      res.status(403).json({
+        success: false,
+        message: "Your account has been deactivated",
+      });
+      return;
+    }
+
     req.user = user;
     next();
   } catch (error) {
     res.status(401).json({
       success: false,
-      message: "Invalid or expired token",
+      message: "Not authorized to access this route",
     });
   }
+};
+
+export const restrictTo = (...roles: string[]) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      res.status(403).json({
+        success: false,
+        message: "You do not have permission to perform this action",
+      });
+      return;
+    }
+    next();
+  };
 };

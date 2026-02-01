@@ -29,62 +29,6 @@ const generateTokens = (userId: string) => {
   return { accessToken, refreshToken };
 };
 
-// Register new user
-export const register = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { email, password, name } = req.body;
-
-    // Validate input
-    if (!email || !password || !name) {
-      res.status(400).json({
-        success: false,
-        message: "Please provide email, password, and name",
-      });
-      return;
-    }
-
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      res.status(400).json({
-        success: false,
-        message: "User already exists with this email",
-      });
-      return;
-    }
-
-    // Create new user
-    const user = await User.create({ email, password, name });
-
-    // Generate tokens
-    const { accessToken, refreshToken } = generateTokens(user._id.toString());
-
-    // Save refresh token to user
-    user.refreshToken = refreshToken;
-    await user.save();
-
-    res.status(201).json({
-      success: true,
-      message: "User registered successfully",
-      data: {
-        user: {
-          id: user._id,
-          email: user.email,
-          name: user.name,
-        },
-        accessToken,
-        refreshToken,
-      },
-    });
-  } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: error.message,
-    });
-  }
-};
-
 // Login user
 export const login = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -100,7 +44,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 
     // Find user and include password field
-    const user = await User.findOne({ email }).select("+password");
+    const user = await User.findOne({ email }).select("+password +role");
     if (!user) {
       res.status(401).json({
         success: false,
@@ -126,9 +70,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     user.refreshToken = refreshToken;
     await user.save();
 
+    // Emit socket event for user login
     socketService.emitToAll("user-logged-in", {
       userId: user._id,
       name: user.name,
+      role: user.role,
       timestamp: new Date(),
     });
 
@@ -140,6 +86,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
           id: user._id,
           email: user.email,
           name: user.name,
+          role: user.role,
         },
         accessToken,
         refreshToken,
@@ -177,7 +124,9 @@ export const refreshToken = async (
     ) as { userId: string };
 
     // Find user
-    const user = await User.findById(decoded.userId).select("+refreshToken");
+    const user = await User.findById(decoded.userId).select(
+      "+refreshToken +role",
+    );
     if (!user || user.refreshToken !== refreshToken) {
       res.status(401).json({
         success: false,
@@ -214,6 +163,13 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
     if (user) {
       // Clear refresh token
       await User.findByIdAndUpdate(user._id, { refreshToken: null });
+
+      // Emit socket event for user logout
+      socketService.emitToAll("user-logged-out", {
+        userId: user._id,
+        name: user.name,
+        timestamp: new Date(),
+      });
     }
 
     res.status(200).json({

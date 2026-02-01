@@ -7,6 +7,8 @@ export interface IUser extends Document {
   email: string;
   password: string;
   role: string;
+  isActive: boolean;
+  isFirstLogin: boolean;
   refreshToken?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -34,7 +36,15 @@ const userSchema = new Schema<IUser>(
     role: {
       type: String,
       enum: ["admin", "staff"],
-      default: "staff", // Default role is staff
+      default: "staff",
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    isFirstLogin: {
+      type: Boolean,
+      default: false,
     },
     refreshToken: {
       type: String,
@@ -48,15 +58,13 @@ const userSchema = new Schema<IUser>(
 
 // Hash password before saving
 userSchema.pre("save", async function (next) {
-  // Only hash if password is modified
   if (!this.isModified("password")) return next();
 
-  // Hash password with cost of 12
   this.password = await bcrypt.hash(this.password, 12);
   next();
 });
 
-// Method to compare passwords
+// Compare password method
 userSchema.methods.comparePassword = async function (
   candidatePassword: string,
 ): Promise<boolean> {
