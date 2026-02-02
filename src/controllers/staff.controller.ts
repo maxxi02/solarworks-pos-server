@@ -2,7 +2,10 @@ import { Request, Response } from "express";
 import { User } from "../models/User";
 import crypto from "crypto";
 import { socketService } from "../server";
-import { sendPasswordResetEmail, sendStaffVerificationEmail } from "../services/email.service";
+import {
+  sendPasswordResetEmail,
+  sendStaffVerificationEmail,
+} from "../services/email.service";
 
 // Helper function to generate temporary password
 const generateTemporaryPassword = (): string => {
@@ -116,6 +119,8 @@ export const createStaff = async (
       emailVerificationExpires: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
     });
 
+    let emailSent = false;
+
     // Send verification email
     try {
       await sendStaffVerificationEmail(
@@ -124,14 +129,16 @@ export const createStaff = async (
         verificationToken,
         temporaryPassword,
       );
+      emailSent = true;
+      console.log("✅ Verification email sent successfully");
     } catch (emailError) {
       console.error("Failed to send verification email:", emailError);
       // Delete the created staff if email fails
       await User.findByIdAndDelete(staff._id);
-      res.status(500).json({
-        success: false,
-        message: "Failed to send verification email. Please try again.",
-      });
+      // res.status(500).json({
+      //   success: false,
+      //   message: "Failed to send verification email. Please try again.",
+      // });
       return;
     }
 
@@ -147,8 +154,9 @@ export const createStaff = async (
 
     res.status(201).json({
       success: true,
-      message:
-        "Staff member created successfully. Verification email sent to their inbox.",
+      message: emailSent
+        ? "Staff member created successfully. Verification email sent to their inbox."
+        : "Staff member created successfully. However, verification email could not be sent. Please use 'Resend Verification' option.",
       data: {
         staff: {
           id: staff._id,
@@ -156,6 +164,7 @@ export const createStaff = async (
           name: staff.name,
           role: staff.role,
           isEmailVerified: false,
+          emailSent,
         },
       },
     });
@@ -163,6 +172,62 @@ export const createStaff = async (
     res.status(500).json({
       success: false,
       message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
+// Add this new endpoint to resend verification email
+export const resendVerificationEmail = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const staff = await User.findById(id);
+
+    if (!staff) {
+      res.status(404).json({
+        success: false,
+        message: "Staff member not found",
+      });
+      return;
+    }
+
+    if (staff.isEmailVerified) {
+      res.status(400).json({
+        success: false,
+        message: "Email already verified",
+      });
+      return;
+    }
+
+    // Generate new verification token
+    const verificationToken = generateVerificationToken();
+    const temporaryPassword = generateTemporaryPassword();
+
+    staff.emailVerificationToken = verificationToken;
+    staff.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    staff.password = temporaryPassword;
+    await staff.save();
+
+    // Send email
+    await sendStaffVerificationEmail(
+      staff.email,
+      staff.name,
+      verificationToken,
+      temporaryPassword,
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Verification email resent successfully",
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to resend verification email",
       error: error.message,
     });
   }
