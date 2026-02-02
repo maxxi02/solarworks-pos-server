@@ -2,93 +2,16 @@ import { Request, Response } from "express";
 import { User } from "../models/User";
 import crypto from "crypto";
 import { socketService } from "../server";
+import { sendPasswordResetEmail, sendStaffVerificationEmail } from "../services/email.service";
 
 // Helper function to generate temporary password
 const generateTemporaryPassword = (): string => {
-  return crypto.randomBytes(8).toString("hex"); // Generates a 16-character password
+  return crypto.randomBytes(8).toString("hex");
 };
 
-// Create new staff (Admin only)
-export const createStaff = async (
-  req: Request,
-  res: Response,
-): Promise<void> => {
-  try {
-    const { email, name, role } = req.body;
-
-    // Validate input
-    if (!email || !name) {
-      res.status(400).json({
-        success: false,
-        message: "Please provide email and name",
-      });
-      return;
-    }
-
-    // Validate role
-    const validRoles = ["staff", "admin"];
-    const staffRole = role || "staff";
-
-    if (!validRoles.includes(staffRole)) {
-      res.status(400).json({
-        success: false,
-        message: "Invalid role. Must be 'staff' or 'admin'",
-      });
-      return;
-    }
-
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      res.status(400).json({
-        success: false,
-        message: "User already exists with this email",
-      });
-      return;
-    }
-
-    // Generate temporary password
-    const temporaryPassword = generateTemporaryPassword();
-
-    // Create new staff member
-    const staff = await User.create({
-      email,
-      name,
-      password: temporaryPassword,
-      role: staffRole,
-      isFirstLogin: true, // Flag to force password change
-    });
-
-    // Emit socket event for new staff creation
-    socketService.emitToAll("staff-created", {
-      staffId: staff._id,
-      name: staff.name,
-      email: staff.email,
-      role: staff.role,
-      createdBy: req.user?._id,
-      timestamp: new Date(),
-    });
-
-    res.status(201).json({
-      success: true,
-      message: "Staff member created successfully",
-      data: {
-        staff: {
-          id: staff._id,
-          email: staff.email,
-          name: staff.name,
-          role: staff.role,
-        },
-        temporaryPassword, // Send this ONCE - admin should share with staff
-      },
-    });
-  } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: error.message,
-    });
-  }
+// Helper function to generate verification token
+const generateVerificationToken = (): string => {
+  return crypto.randomBytes(32).toString("hex");
 };
 
 // Get all staff members (Admin only)
@@ -128,6 +51,112 @@ export const getAllStaff = async (
       data: {
         staff,
         total: staff.length,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
+export const createStaff = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { email, name, role } = req.body;
+
+    // Validate input
+    if (!email || !name) {
+      res.status(400).json({
+        success: false,
+        message: "Please provide email and name",
+      });
+      return;
+    }
+
+    // Validate role
+    const validRoles = ["staff", "admin"];
+    const staffRole = role || "staff";
+
+    if (!validRoles.includes(staffRole)) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid role. Must be 'staff' or 'admin'",
+      });
+      return;
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      res.status(400).json({
+        success: false,
+        message: "User already exists with this email",
+      });
+      return;
+    }
+
+    // Generate temporary password and verification token
+    const temporaryPassword = generateTemporaryPassword();
+    const verificationToken = generateVerificationToken();
+
+    // Create new staff member
+    const staff = await User.create({
+      email,
+      name,
+      password: temporaryPassword,
+      role: staffRole,
+      isFirstLogin: true,
+      isEmailVerified: false,
+      emailVerificationToken: verificationToken,
+      emailVerificationExpires: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+    });
+
+    // Send verification email
+    try {
+      await sendStaffVerificationEmail(
+        email,
+        name,
+        verificationToken,
+        temporaryPassword,
+      );
+    } catch (emailError) {
+      console.error("Failed to send verification email:", emailError);
+      // Delete the created staff if email fails
+      await User.findByIdAndDelete(staff._id);
+      res.status(500).json({
+        success: false,
+        message: "Failed to send verification email. Please try again.",
+      });
+      return;
+    }
+
+    // Emit socket event for new staff creation
+    socketService.emitToAll("staff-created", {
+      staffId: staff._id,
+      name: staff.name,
+      email: staff.email,
+      role: staff.role,
+      createdBy: req.user?._id,
+      timestamp: new Date(),
+    });
+
+    res.status(201).json({
+      success: true,
+      message:
+        "Staff member created successfully. Verification email sent to their inbox.",
+      data: {
+        staff: {
+          id: staff._id,
+          email: staff.email,
+          name: staff.name,
+          role: staff.role,
+          isEmailVerified: false,
+        },
       },
     });
   } catch (error: any) {
@@ -385,8 +414,24 @@ export const resetStaffPassword = async (
     const newTemporaryPassword = generateTemporaryPassword();
 
     staff.password = newTemporaryPassword;
-    staff.isFirstLogin = true; // Force password change on next login
+    staff.isFirstLogin = true;
     await staff.save();
+
+    // Send email with new password
+    try {
+      await sendPasswordResetEmail(
+        staff.email,
+        staff.name,
+        newTemporaryPassword,
+      );
+    } catch (emailError) {
+      console.error("Failed to send password reset email:", emailError);
+      res.status(500).json({
+        success: false,
+        message: "Failed to send password reset email",
+      });
+      return;
+    }
 
     // Emit socket event for password reset
     socketService.emitToAll("staff-password-reset", {
@@ -398,9 +443,69 @@ export const resetStaffPassword = async (
 
     res.status(200).json({
       success: true,
-      message: "Password reset successfully",
+      message: "Password reset successfully. Email sent to staff member.",
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
+export const verifyEmail = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { token } = req.query;
+
+    if (!token) {
+      res.status(400).json({
+        success: false,
+        message: "Verification token is required",
+      });
+      return;
+    }
+
+    // Find user with this token
+    const user = await User.findOne({
+      emailVerificationToken: token,
+      emailVerificationExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid or expired verification token",
+      });
+      return;
+    }
+
+    // Verify the user
+    user.isEmailVerified = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpires = undefined;
+    await user.save();
+
+    // Emit socket event for email verification
+    socketService.emitToAll("email-verified", {
+      userId: user._id,
+      name: user.name,
+      timestamp: new Date(),
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Email verified successfully. You can now log in.",
       data: {
-        temporaryPassword: newTemporaryPassword,
+        user: {
+          id: user._id,
+          email: user.email,
+          name: user.name,
+          isEmailVerified: true,
+        },
       },
     });
   } catch (error: any) {

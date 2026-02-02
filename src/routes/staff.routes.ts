@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   createStaff,
+  verifyEmail,
   getAllStaff,
   getStaffById,
   updateStaff,
@@ -13,22 +14,20 @@ import { protect, restrictTo } from "../middleware/auth";
 
 const router = Router();
 
-// All routes require authentication and admin role
+// Public route for email verification
+router.get("/verify-email", verifyEmail);
+
+// Protected routes (admin only)
 router.use(protect);
 router.use(restrictTo("admin"));
 
-// Staff CRUD operations
-router.post("/", createStaff); // POST /api/staff
-router.get("/", getAllStaff); // GET /api/staff
-router.get("/:id", getStaffById); // GET /api/staff/:id
-router.put("/:id", updateStaff); // PUT /api/staff/:id
-
-// Staff status management
-router.patch("/:id/deactivate", deactivateStaff); // PATCH /api/staff/:id/deactivate
-router.patch("/:id/reactivate", reactivateStaff); // PATCH /api/staff/:id/reactivate
-router.delete("/:id", deleteStaff); // DELETE /api/staff/:id
-
-// Password management
-router.post("/:id/reset-password", resetStaffPassword); // POST /api/staff/:id/reset-password
+router.post("/", createStaff);
+router.get("/", getAllStaff);
+router.get("/:id", getStaffById);
+router.put("/:id", updateStaff);
+router.patch("/:id/deactivate", deactivateStaff);
+router.patch("/:id/reactivate", reactivateStaff);
+router.delete("/:id", deleteStaff);
+router.post("/:id/reset-password", resetStaffPassword);
 
 export default router;

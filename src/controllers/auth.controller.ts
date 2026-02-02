@@ -53,6 +53,15 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    if (!user.isEmailVerified) {
+      res.status(403).json({
+        success: false,
+        message:
+          "Please verify your email address before logging in. Check your inbox for the verification link.",
+      });
+      return;
+    }
+
     // Check password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
