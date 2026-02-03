@@ -1,3 +1,13 @@
+import dns from 'node:dns';
+
+// Force reliable public DNS servers right at startup
+// This fixes most querySrv ECONNREFUSED issues on Windows / restricted networks
+dns.setServers(['8.8.8.8', '8.8.4.4']);  // Google DNS
+// OR try Cloudflare if Google doesn't work:
+// dns.setServers(['1.1.1.1', '1.0.0.1']);
+
+console.log('Using custom DNS servers for MongoDB SRV lookup');
+import staffRoutes from "./routes/staff.routes";
 import express, { Application, Request, Response } from "express";
 import dotenv from "dotenv";
 import cors from "cors";
@@ -7,8 +17,6 @@ import http from "http";
 import { SocketService } from "./services/socket.services";
 
 import authRoutes from "./routes/auth.routes";
-import staffRoutes from "./routes/staff.routes";
-
 dotenv.config();
 
 // Create Express app
